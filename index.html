@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>學生成績自動擷取工具</title>
+    <style>
+        body { font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; padding: 20px; background-color: #f9f9f9; }
+        .container { max-width: 900px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h2 { color: #333; }
+        .upload-area { margin: 20px 0; padding: 15px; border: 2px dashed #007bff; border-radius: 5px; background-color: #f1f8ff; }
+        button { background-color: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-size: 16px; }
+        button:hover { background-color: #0056b3; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
+        th { background-color: #007bff; color: white; }
+        tr:nth-child(even) { background-color: #f2f2f2; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>📊 歷年成績擷取工具</h2>
+        <div class="upload-area">
+            <p>請上傳歷年總表 CSV 檔 (可多選)，系統將自動擷取各學期的「國語文」與「數學」成績。</p>
+            <input type="file" id="fileInput" accept=".csv" multiple>
+            <button onclick="processFiles()">開始擷取</button>
+        </div>
+        <div id="output"></div>
+    </div>
+
+    <script>
+        function processFiles() {
+            const fileInput = document.getElementById('fileInput');
+            const outputDiv = document.getElementById('output');
+            outputDiv.innerHTML = '';
+
+            if (fileInput.files.length === 0) {
+                alert('請先選擇 CSV 檔案！');
+                return;
+            }
+
+            Array.from(fileInput.files).forEach(file => {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const text = e.target.result;
+                    const rows = text.split('\n');
+                    let extractedData = [];
+                    let currentTerm = '';
+                    let isHeader = false;
+
+                    rows.forEach(row => {
+                        // 處理 CSV 欄位，並去除多餘空白
+                        const cols = row.split(',').map(c => c.trim());
+                        if (cols.length === 0 || cols[0] === '') return;
+
+                        // 偵測學期/評量代號 (例如 2-2-1 或 1-1-1)
+                        if (cols[0].split('-').length >= 3 && (cols[1] === undefined || cols[1] === '')) {
+                            currentTerm = cols[0];
+                            isHeader = true;
+                            return;
+                        }
+
+                        // 跳過欄位標題列
+                        if (isHeader) {
+                            isHeader = false;
+                            return;
+                        }
+
+                        // 擷取學生資料列 (確認第一欄座號為數字)
+                        if (currentTerm && !isNaN(cols[0]) && cols[0] !== '') {
+                            extractedData.push({
+                                term: currentTerm,
+                                seat: cols[0],
+                                name: cols[1],
+                                id: cols[2],
+                                chinese: cols[4] || '',
+                                math: cols[5] || ''
+                                // 未來若有英文，可在此擴充：english: cols[X] || ''
+                            });
+                        }
+                    });
+
+                    renderTable(file.name, extractedData, outputDiv);
+                };
+                // 讀取檔案，若 Excel 輸出的 CSV 發生亂碼，可嘗試將 'utf-8' 改為 'big5'
+                reader.readAsText(file, 'utf-8'); 
+            });
+        }
+
+        function renderTable(fileName, data, container) {
+            let html = `<h3>📄 檔案：${fileName}</h3>`;
+            html += `<table>
+                        <thead>
+                            <tr>
+                                <th>學期/評量</th>
+                                <th>座號</th>
+                                <th>姓名</th>
+                                <th>學號</th>
+                                <th>國語文</th>
+                                <th>數學</th>
+                            </tr>
+                        </thead>
+                        <tbody>`;
+            data.forEach(d => {
+                html += `<tr>
+                            <td>${d.term}</td>
+                            <td>${d.seat}</td>
+                            <td>${d.name}</td>
+                            <td>${d.id}</td>
+                            <td>${d.chinese}</td>
+                            <td>${d.math}</td>
+                         </tr>`;
+            });
+            html += `</tbody></table>`;
+            container.innerHTML += html;
+        }
+    </script>
+</body>
+</html>
