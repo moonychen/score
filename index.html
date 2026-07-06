@@ -2,117 +2,85 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>學生成績自動擷取工具</title>
-    <style>
-        body { font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; padding: 20px; background-color: #f9f9f9; }
-        .container { max-width: 900px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        h2 { color: #333; }
-        .upload-area { margin: 20px 0; padding: 15px; border: 2px dashed #007bff; border-radius: 5px; background-color: #f1f8ff; }
-        button { background-color: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-size: 16px; }
-        button:hover { background-color: #0056b3; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px; }
-        th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
-        th { background-color: #007bff; color: white; }
-        tr:nth-child(even) { background-color: #f2f2f2; }
-    </style>
+    <title>新民國小 - 成績合併工具</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
-    <div class="container">
-        <h2>📊 歷年成績擷取工具</h2>
-        <div class="upload-area">
-            <p>請上傳歷年總表 CSV 檔 (可多選)，系統將自動擷取各學期的「國語文」與「數學」成績。</p>
-            <input type="file" id="fileInput" accept=".csv" multiple>
-            <button onclick="processFiles()">開始擷取</button>
-        </div>
-        <div id="output"></div>
-    </div>
+<body class="bg-gray-100 p-8">
+    <div id="root"></div>
 
-    <script>
-        function processFiles() {
-            const fileInput = document.getElementById('fileInput');
-            const outputDiv = document.getElementById('output');
-            outputDiv.innerHTML = '';
+    <script type="text/babel">
+        const { useState } = React;
 
-            if (fileInput.files.length === 0) {
-                alert('請先選擇 CSV 檔案！');
-                return;
-            }
+        function App() {
+            const [files, setFiles] = useState([]);
+            const [processing, setProcessing] = useState(false);
 
-            Array.from(fileInput.files).forEach(file => {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    const text = e.target.result;
-                    const rows = text.split('\n');
-                    let extractedData = [];
-                    let currentTerm = '';
-                    let isHeader = false;
+            const handleFileChange = (e) => setFiles(Array.from(e.target.files));
 
-                    rows.forEach(row => {
-                        // 處理 CSV 欄位，並去除多餘空白
-                        const cols = row.split(',').map(c => c.trim());
-                        if (cols.length === 0 || cols[0] === '') return;
+            const processFiles = async () => {
+                setProcessing(true);
+                let allData = [];
 
-                        // 偵測學期/評量代號 (例如 2-2-1 或 1-1-1)
-                        if (cols[0].split('-').length >= 3 && (cols[1] === undefined || cols[1] === '')) {
+                for (let file of files) {
+                    const text = await file.text();
+                    const lines = text.split('\n');
+                    let currentTerm = "未知";
+                    let headers = [];
+
+                    lines.forEach(line => {
+                        const cols = line.split(',').map(c => c.trim());
+                        if (cols.length < 2) return;
+
+                        // 偵測學期 (e.g., 1-1-1)
+                        if (/^\d-\d-\d/.test(cols[0])) {
                             currentTerm = cols[0];
-                            isHeader = true;
                             return;
                         }
 
-                        // 跳過欄位標題列
-                        if (isHeader) {
-                            isHeader = false;
+                        // 偵測標題
+                        if (cols.includes('姓名') && cols.includes('座號')) {
+                            headers = cols;
                             return;
                         }
 
-                        // 擷取學生資料列 (確認第一欄座號為數字)
-                        if (currentTerm && !isNaN(cols[0]) && cols[0] !== '') {
-                            extractedData.push({
-                                term: currentTerm,
-                                seat: cols[0],
-                                name: cols[1],
-                                id: cols[2],
-                                chinese: cols[4] || '',
-                                math: cols[5] || ''
-                                // 未來若有英文，可在此擴充：english: cols[X] || ''
-                            });
+                        // 擷取資料
+                        if (headers.length > 0 && cols[0] && !isNaN(cols[0])) {
+                            let obj = { 班級: file.name.replace('.csv', ''), 學期: currentTerm };
+                            headers.forEach((h, i) => obj[h] = cols[i]);
+                            allData.push(obj);
                         }
                     });
+                }
 
-                    renderTable(file.name, extractedData, outputDiv);
-                };
-                // 讀取檔案，若 Excel 輸出的 CSV 發生亂碼，可嘗試將 'utf-8' 改為 'big5'
-                reader.readAsText(file, 'utf-8'); 
-            });
+                // 匯出 Excel
+                const ws = XLSX.utils.json_to_sheet(allData);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "成績總表");
+                XLSX.writeFile(wb, "學生成績總表.xlsx");
+                setProcessing(false);
+            };
+
+            return (
+                <div className="max-w-2xl mx-auto bg-white p-6 rounded-xl shadow-lg">
+                    <h1 className="text-2xl font-bold mb-4">成績合併工具</h1>
+                    <input type="file" multiple onChange={handleFileChange} className="mb-4 block w-full" />
+                    <button 
+                        onClick={processFiles}
+                        disabled={files.length === 0 || processing}
+                        className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 disabled:bg-gray-400"
+                    >
+                        {processing ? '處理中...' : '開始合併成 Excel'}
+                    </button>
+                </div>
+            );
         }
 
-        function renderTable(fileName, data, container) {
-            let html = `<h3>📄 檔案：${fileName}</h3>`;
-            html += `<table>
-                        <thead>
-                            <tr>
-                                <th>學期/評量</th>
-                                <th>座號</th>
-                                <th>姓名</th>
-                                <th>學號</th>
-                                <th>國語文</th>
-                                <th>數學</th>
-                            </tr>
-                        </thead>
-                        <tbody>`;
-            data.forEach(d => {
-                html += `<tr>
-                            <td>${d.term}</td>
-                            <td>${d.seat}</td>
-                            <td>${d.name}</td>
-                            <td>${d.id}</td>
-                            <td>${d.chinese}</td>
-                            <td>${d.math}</td>
-                         </tr>`;
-            });
-            html += `</tbody></table>`;
-            container.innerHTML += html;
-        }
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
     </script>
 </body>
 </html>
